@@ -42,11 +42,11 @@ Demo.prototype.init = function(){
 
 	// the curves we draw to the screen are stored here, one of them is the red skeleton curve, and the other is the actual smooth curve
 	this.subd = [
-		new Subdivision({
+		new SDCurve({
 			points: pts,
 			resolution: 0
 		}),
-		new Subdivision({
+		new SDCurve({
 			points: pts,
 			open: true,
 			resolution: 5,

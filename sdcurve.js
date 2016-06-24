@@ -1,8 +1,8 @@
-function Subdivision(params){
+function SDCurve(params){
 	this.init(params);
 }
 
-Subdivision.prototype.init = function(params){
+SDCurve.prototype.init = function(params){
 	this._points = params.points;
 	this._resolution = params.hasOwnProperty("resolution") ? params.resolution : 5;
 	this._degree = params.hasOwnProperty("degree") ? Math.max(params.degree,2) : 2;
@@ -12,12 +12,12 @@ Subdivision.prototype.init = function(params){
 	this.subdivide();
 };
 
-Subdivision.prototype.isAcceptableType = function(type) {
+SDCurve.prototype.isAcceptableType = function(type) {
 	var s = ["bspline","interpolating","bezier"];
 	return s.includes(type);
 }
 
-Subdivision.prototype.points = function(pts) {
+SDCurve.prototype.points = function(pts) {
 	if (pts != null) {
 		var same = this._points.length == pts.length;
 		this._points = pts;
@@ -30,7 +30,7 @@ Subdivision.prototype.points = function(pts) {
 	return this._points;
 }
 
-Subdivision.prototype.adjustPoints = function(ptMap) {
+SDCurve.prototype.adjustPoints = function(ptMap) {
 	for(var i in ptMap) {
 		this._points[i] = ptMap[i];
 	}
@@ -48,7 +48,7 @@ Subdivision.prototype.adjustPoints = function(ptMap) {
 	this.recalculate(totalRange.min, totalRange.max);
 }
 
-Subdivision.prototype.resolution = function(newres) {
+SDCurve.prototype.resolution = function(newres) {
 	if(newres != null && newres != this._resolution) {
 		this._resolution = newres;
 		this.subdivide();
@@ -56,7 +56,7 @@ Subdivision.prototype.resolution = function(newres) {
 	return this._resolution;
 }
 
-Subdivision.prototype.open = function(newopen) {
+SDCurve.prototype.open = function(newopen) {
 	if(newopen != null && newopen != this._open) {
 		this._open = newopen;
 		this.subdivide();
@@ -64,7 +64,7 @@ Subdivision.prototype.open = function(newopen) {
 	return this._open;
 }
 
-Subdivision.prototype.type = function(newtype) {
+SDCurve.prototype.type = function(newtype) {
 	if(newtype != null && newtype != this._type && this.isAcceptableType(newtype)) {
 		this._type = newtype;
 		this.subdivide();
@@ -72,7 +72,7 @@ Subdivision.prototype.type = function(newtype) {
 	return this._type;
 }
 
-Subdivision.prototype.degree = function(newdegree) {
+SDCurve.prototype.degree = function(newdegree) {
 	if(newdegree != null && newdegree != this._degree) {
 		this._degree = Math.max(2,newdegree);
 		this.subdivide();
@@ -85,7 +85,7 @@ Subdivision.prototype.degree = function(newdegree) {
 // u: the distance along the arclength curve that matches pointOnCurve (0 <= u <= 1)
 // index: the index of the point in the "curve()" array that matches u (closest point before u)
 // weights: a map of how pointOnCurve was calculated, giving weights of which points in the points() array
-Subdivision.prototype.pointAt = function(u) {
+SDCurve.prototype.pointAt = function(u) {
 	if(this._arcCurve == null)
 		this.computeArclengths();
 	
@@ -97,11 +97,11 @@ Subdivision.prototype.pointAt = function(u) {
 	};
 }
 
-Subdivision.prototype.curve = function() {
+SDCurve.prototype.curve = function() {
 	return this._fine;
 };
 
-Subdivision.prototype.subdivide = function(){
+SDCurve.prototype.subdivide = function(){
 	this._fine = this._points.map(function(d,i) { var map = {}; map[i] = 1; return { point: d, weights: map };});
 		
 	if(this._fine.length > 2) {
@@ -207,7 +207,7 @@ Subdivision.prototype.subdivide = function(){
 };
 
 // finds the min and max influence each control point has over the fine curve
-Subdivision.prototype.findIndexRanges = function() {
+SDCurve.prototype.findIndexRanges = function() {
 	this.indexRanges = {};
 	var _this = this;
 	
@@ -244,7 +244,7 @@ Subdivision.prototype.findIndexRanges = function() {
 
 // recalculate the fine curve between indices min and max
 // the control point positions may have changed but the weights have not
-Subdivision.prototype.recalculate = function(min, max) {
+SDCurve.prototype.recalculate = function(min, max) {
 	var len = this._fine.length;
 	if(min==null || max==null) {
 		min=0;	max = len-1;
@@ -262,7 +262,7 @@ Subdivision.prototype.recalculate = function(min, max) {
 }
 
 // given a series of points and weights to apply, multiply and add up these factors until we get the final point and its final weights
-Subdivision.prototype.applyWeights = function(wgtArray) {
+SDCurve.prototype.applyWeights = function(wgtArray) {
 	var partialPts = wgtArray.map(function(d,i) {
 		return sdUtil.mult(d.weight, d.fine.point);
 	});
@@ -286,7 +286,7 @@ Subdivision.prototype.applyWeights = function(wgtArray) {
 // index: the index of the point in the "curve()" array that matches u (closest point before u)
 // weights: a map of how pointOnCurve was calculated, giving weights of which points in the points() array
 // distance: the distance between pt and pointOnCurve
-Subdivision.prototype.getClosestPoint = function(pt) {
+SDCurve.prototype.getClosestPoint = function(pt) {
 	var bestDist = Number.MAX_VALUE;
 	var d;
 	var bestIndex = -1;
@@ -321,7 +321,7 @@ Subdivision.prototype.getClosestPoint = function(pt) {
 	};	
 }
 
-Subdivision.prototype.computeArclengths = function() {
+SDCurve.prototype.computeArclengths = function() {
 	this._arcCurve = new ArclengthCurve(this._fine.map(function(d) { return d.point; }));
 }
 
@@ -329,7 +329,7 @@ Subdivision.prototype.computeArclengths = function() {
 // hitinfo is returned from either pointAt() or getClosestPoint(), you must provide this info as your "point on curve" to move
 // delta is a vector for the amount you want to move the above point to
 // width (if not provided, width = 1) indicates how much of the curve you want to affect when you move this point
-Subdivision.prototype.moveCurve = function(hitinfo, delta, width) {
+SDCurve.prototype.moveCurve = function(hitinfo, delta, width) {
 	if(width == null)
 		width = 1;
 	var sorted = Object.keys(hitinfo.weights)
