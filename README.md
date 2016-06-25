@@ -1,4 +1,4 @@
-"# sdcurve.js" 
+# SDCurve.js
 
 This library is a work in progress. Documentation and examples will be posted shortly!
 
