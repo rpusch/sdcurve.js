@@ -8,12 +8,13 @@ SDCurve.prototype.init = function(params){
 	this._degree = params.hasOwnProperty("degree") ? Math.max(params.degree,2) : 2;
 	this._type = params.hasOwnProperty("type") && this.isAcceptableType(params.type) ? params.type : "bspline";
 	this._open = params.hasOwnProperty("open") ? params.open : true;
+	this._catmullTension = params.hasOwnProperty("catmullTension") ? params.catmullTension : 0.5;
 	
 	this.subdivide();
 };
 
 SDCurve.prototype.isAcceptableType = function(type) {
-	var s = ["bspline","interpolating","bezier"];
+	var s = ["bspline","dyn-levin","catmull-rom"];
 	return s.includes(type);
 }
 
@@ -45,7 +46,7 @@ SDCurve.prototype.adjustPoints = function(ptMap) {
 	}
 	
 	var totalRange = ranges.reduce(collapseRange);
-	this.recalculate(totalRange.min, totalRange.max);
+	this.recalculate(totalRange.min, totalRange.max, this._type === "catmull-rom");
 }
 
 SDCurve.prototype.resolution = function(newres) {
@@ -75,9 +76,19 @@ SDCurve.prototype.type = function(newtype) {
 SDCurve.prototype.degree = function(newdegree) {
 	if(newdegree != null && newdegree != this._degree) {
 		this._degree = Math.max(2,newdegree);
-		this.subdivide();
+		if(this._type === "bspline")
+			this.subdivide();
 	}
 	return this._degree;
+}
+
+SDCurve.prototype.catmullTension = function(newtension) {
+	if(newtension != null && newtension != this._catmullTension) {
+		this._catmullTension = Math.min(Math.max(0, newtension), 1);
+		if(this._type === "catmull-rom")
+			this.subdivide();
+	}
+	return this._catmullTension;
 }
 
 // returns an object with these fields
@@ -105,7 +116,7 @@ SDCurve.prototype.subdivide = function(){
 	this._fine = this._points.map(function(d,i) { var map = {}; map[i] = 1; return { point: d, weights: map };});
 		
 	if(this._fine.length > 2) {
-		if(this._type == "interpolating") {
+		if(this._type == "dyn-levin") {
 			for(var s = 0; s < this._resolution; s++) {
 				var newFine = [];
 				var len = this._fine.length;
@@ -134,10 +145,11 @@ SDCurve.prototype.subdivide = function(){
 			var loops = (this._degree - (odd ? 1 : 2)) / 2;			
 					
 			for(var s = 0; s < this._resolution; s++) {
+				
 				var newFine = [];
 				var len = this._fine.length;
 				var i = this._open ? 1 : 0;
-
+	
 				// first, add midpoint to all line segments
 				for(var j=0; j<i; j++) {
 					newFine.push(this._fine[j]);
@@ -172,12 +184,14 @@ SDCurve.prototype.subdivide = function(){
 					
 					if(this._open) {
 						newFine.push(this._fine[0]);
+						//if(odd)
 						newFine.push(this.applyWeights([{weight:0.75, fine: this._fine[0]}, {weight: 0.25, fine: this._fine[1]} ]));
 					}
 					for(var j=0; j<len-(this._open?2:0); j++)
 						newFine.push(this.applyWeights([{weight:0.25, fine: this._fine[j]}, {weight: 0.5, fine: this._fine[(j+1)%len]}, 
 														{weight: 0.25, fine: this._fine[(j+2)%len]} ]));
 					if(this._open) {
+						//if(odd)
 						newFine.push(this.applyWeights([{weight:0.25, fine: this._fine[len-2]}, {weight: 0.75, fine: this._fine[len-1]} ]));
 						newFine.push(this._fine[len-1]);
 					}
@@ -186,16 +200,31 @@ SDCurve.prototype.subdivide = function(){
 				this._fine = newFine;				
 			}
 		}
-		else if(this._type == "bezier") {
-			var d = this._degree;
-			// do b-spline subdivision of degree n-1, where n = number of control points
-			this._type = "bspline";
-			this._degree = this._fine.length-1;
-			
-			this.subdivide();
-			
-			this._degree = d;
-			this._type = "bezier";
+		else if(this._type == "catmull-rom") {
+			if(this._resolution > 0) {
+				var _this = this;
+				
+				
+				var newfine = [];
+				if(this._open) {
+					// duplicate endpoints
+					var newfine = [this._fine[0]];
+					Array.prototype.push.apply(newfine,this._fine);
+					newfine.push(this._fine[this._fine.length-1]);
+					
+					this._fine = newfine;
+					newfine = [];
+				}
+				
+				for(var crindex=0; crindex<this._fine.length-(this._open ? 3 : 0); crindex++) {
+					var npts = Math.pow(2,this._resolution);
+					for(var i=(crindex == 0 ? 0 : 1); i<=npts; i++) {
+						newfine.push(this.doCatmull(crindex, i/npts,this._fine));						
+					}
+				}
+						
+				this._fine = newfine;
+			}
 		}
 		
 		if(!this._open) // close the loop if need be
@@ -205,6 +234,37 @@ SDCurve.prototype.subdivide = function(){
 	this.findIndexRanges();
 	this._arcCurve = null;	
 };
+
+// an internal function for computing catmull-rom subdivision
+SDCurve.prototype.doCatmull = function(startingIndex, tFactor, adjustedPoints) {
+	var _this = this;
+	function tj(ti, Pi, Pj) {
+		var dx = Pj.point.x - Pi.point.x, dy = Pj.point.y - Pi.point.y;
+		return Math.pow(Math.sqrt(dx*dx + dy*dy),_this._catmullTension) + ti;
+	}
+	
+	var len = adjustedPoints.length;
+	
+	var P0 = adjustedPoints[startingIndex], P1 = adjustedPoints[(startingIndex+1)%len];
+	var P2 = adjustedPoints[(startingIndex+2)%len], P3 = adjustedPoints[(startingIndex+3)%len];
+					
+	var t0 = 0;
+	var t1 = tj(t0, P0, P1);
+	var t2 = tj(t1, P1, P2);
+	var t3 = tj(t2, P2, P3);
+		
+	var t = t1 + (t2-t1) * tFactor;
+	var A1 = t1-t0==0 ? P0 : this.applyWeights([{weight:(t1-t)/(t1-t0), fine: P0}, {weight: (t-t0)/(t1-t0), fine: P1} ]);
+	var A2 = t2-t1==0 ? P1 : this.applyWeights([{weight:(t2-t)/(t2-t1), fine: P1}, {weight: (t-t1)/(t2-t1), fine: P2} ]);
+	var A3 = t3-t2==0 ? P2 : this.applyWeights([{weight:(t3-t)/(t3-t2), fine: P2}, {weight: (t-t2)/(t3-t2), fine: P3} ]);
+	
+	var B1 = t2-t0==0 ? A1 : this.applyWeights([{weight:(t2-t)/(t2-t0), fine: A1}, {weight: (t-t0)/(t2-t0), fine: A2} ]);
+	var B2 = t3-t1==0 ? A2 : this.applyWeights([{weight:(t3-t)/(t3-t1), fine: A2}, {weight: (t-t1)/(t3-t1), fine: A3} ]);
+	
+	var C = t2-t1==0 ? B1 : this.applyWeights([{weight:(t2-t)/(t2-t1), fine: B1}, {weight: (t-t1)/(t2-t1), fine: B2} ]);
+	C.tags = [startingIndex, tFactor];
+	return C;	
+}
 
 // finds the min and max influence each control point has over the fine curve
 SDCurve.prototype.findIndexRanges = function() {
@@ -244,19 +304,35 @@ SDCurve.prototype.findIndexRanges = function() {
 
 // recalculate the fine curve between indices min and max
 // the control point positions may have changed but the weights have not
-SDCurve.prototype.recalculate = function(min, max) {
+SDCurve.prototype.recalculate = function(min, max, redoCatmull) {
 	var len = this._fine.length;
 	if(min==null || max==null) {
 		min=0;	max = len-1;
 	}
 	for(var i=min; i<=max; i++) {
-		var pt = {x:0, y:0};
-		for(var ind in this._fine[i].weights) {
-			//pt = sdUtil.add(pt, sdUtil.mult(this._fine[i].weights[ind], this._points[ind]));
-			pt.x += this._fine[(i+len)%len].weights[ind] * this._points[ind].x;
-			pt.y += this._fine[(i+len)%len].weights[ind] * this._points[ind].y;
+		var pt; 
+		
+		// we can't reuse the old weights for catmull-rom, sadly, because they are based on length of line segments
+		// so we basically just have to recompute the moving parts from scratch
+		if(redoCatmull) {
+			var mappedPoints = this._points.map(function(d,i) { var map = {}; map[i] = 1; return { point: d, weights: map };});
+			var adjustedPoints = [];
+			if(this._open) 
+				adjustedPoints.push(mappedPoints[0]);
+			Array.prototype.push.apply(adjustedPoints,mappedPoints);
+			if(this._open) 
+				adjustedPoints.push(mappedPoints[mappedPoints.length-1]);
+			
+			this._fine[i] = this.doCatmull(this._fine[i].tags[0], this._fine[i].tags[1], adjustedPoints);
 		}
-		this._fine[i].point = pt;
+		else {
+			pt = {x:0, y:0};
+			for(var ind in this._fine[i].weights) {
+				pt.x += this._fine[(i+len)%len].weights[ind] * this._points[ind].x;
+				pt.y += this._fine[(i+len)%len].weights[ind] * this._points[ind].y;
+			}
+			this._fine[i].point = pt;
+		}
 	}
 	this._arcCurve = null;
 }
@@ -326,21 +402,21 @@ SDCurve.prototype.computeArclengths = function() {
 }
 
 // moves a given point on the curve by a certain delta
-// hitinfo is returned from either pointAt() or getClosestPoint(), you must provide this info as your "point on curve" to move
+// pointToMove is returned from either pointAt() or getClosestPoint(), you must provide this info as your "point on curve" to move
 // delta is a vector for the amount you want to move the above point to
 // width (if not provided, width = 1) indicates how much of the curve you want to affect when you move this point
-SDCurve.prototype.moveCurve = function(hitinfo, delta, width) {
+SDCurve.prototype.moveCurve = function(pointToMove, delta, width) {
 	if(width == null)
 		width = 1;
-	var sorted = Object.keys(hitinfo.weights)
+	var sorted = Object.keys(pointToMove.weights)
 	.sort(function (a, b) {
-		   return hitinfo.weights[b] - hitinfo.weights[a];
+		   return pointToMove.weights[b] - pointToMove.weights[a];
 		 });
 
 	var ptsToMove = Math.min(sorted.length, Math.min(width, this._points.length));
 	var sum = 0;
 	for(var i=0; i<ptsToMove; i++) 
-		sum += hitinfo.weights[sorted[i]];
+		sum += pointToMove.weights[sorted[i]];
 		
 	var ptMap = {};
 		
