@@ -204,7 +204,6 @@ SDCurve.prototype.subdivide = function(){
 			if(this._resolution > 0) {
 				var _this = this;
 				
-				
 				var newfine = [];
 				if(this._open) {
 					// duplicate endpoints
