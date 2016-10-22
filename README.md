@@ -1,5 +1,5 @@
 # SDCurve.js
 
-This library is a work in progress. Documentation and examples will be posted shortly!
+SDCurve.js lets you easily create and interact with subdivision curves. For documentation and examples, check the [Wiki page](https://github.com/rpusch/sdcurve.js/wiki).
 
-You can view a demo of SDCurve.js [here](http://charles.perin.free.fr/misc/sdcurve/demo.html).
+You can view a demo of SDCurve.js in action [here](http://charles.perin.free.fr/misc/sdcurve/demo.html).

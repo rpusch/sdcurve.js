@@ -2,6 +2,7 @@ var margin = {top: 200, right: 30, bottom: 30, left: 300};
 var cursor;
 var curve;
 var skelCurve;
+var allCurves;
 var isDragging = false;
 var draggingInfo;
 var svg;
@@ -12,14 +13,15 @@ var fineLine;
 var oldPt;
 var showPoints = false;
 var adjustWidth = 1;
+var savedsvg;
 
 function Demo(args){
 	lineFunction = d3.svg.line()
 		.x(function(d) { return d.point.x; })
 		.y(function(d) { return d.point.y; })
 		.interpolate("linear");
-	
-    this.margin = margin;
+
+	this.margin = margin;
     this.width = args.width || 1200;
     this.height = args.height || 1000;
     this.width = this.width - this.margin.left - this.margin.right;
@@ -30,16 +32,10 @@ function Demo(args){
 Demo.prototype.init = function(){
 
   var $this = this;
-		
-	//var pts = [{x:0,y:0}, {x:100,y:400}, {x:500,y:400}, {x:600,y:0}];
-	//var pts = [{x:0,y:0}, {x:100,y:400}, {x:300, y:500},{x:500,y:400}, {x:600,y:0}];
-	//var pts = [{x:0,y:0}, {x:0,y:300}, {x:200,y:500}, {x:400,y:500}, {x:600,y:300}, {x:600,y:0}];
-	var pts = [{x:50,y:0},{x:-87,y:350},{x:180,y:590},{x:503,y:590},{x:742,y:350},{x:550,y:0}];
-	//var pts = [{x:0,y:0}, {x:0,y:150},{x:0,y:300}, {x:200,y:500}, {x:400,y:500},{x:600,y:300}, {x:600,y:150},{x:600,y:0}];
-	// var pts = [];
-	// for(var i=0; i<=700; i+=5)
-	// pts.push({x:i, y:i});
-
+	
+	var pts;
+	pts = [{x:32,y:-2},{x:-113,y:429},{x:322,y:397},{x:203,y:56},{x:692,y:65},{x:524,y:443}]
+ 
 	// the curves we draw to the screen are stored here, one of them is the red skeleton curve, and the other is the actual smooth curve
 	this.subd = [
 		new SDCurve({
@@ -54,15 +50,20 @@ Demo.prototype.init = function(){
 			type: "bspline"
 		})
 	];
-	
+			
+	allCurves = this.subd;
+			
 	// we can reference them directly via these global variables
 	skelCurve = this.subd[0];
 	curve = this.subd[1];
+	skelCurve.color = "#333333";
+	curve.color = "#C00805";
 		
 	var settings = [
 		{name: "Type", value: curve.type(), active: true},
 		{name: "Degree", value: curve.degree(), active: true},
 		{name: "Resolution", value: curve.resolution(), active: true},
+		{name: "Catmull Tension", value: curve.catmullTension(), active: true},
 		{name: "Open", value: curve.open(), active: true},
 		{name: "Drag Width", value: adjustWidth, active: true},
 		{name: "Show Curve Points", value: false, active: true}
@@ -90,13 +91,14 @@ Demo.prototype.init = function(){
 		.style("font-size","1.15em")
 		.html("<br>");
 		
-	this.baseSVG = d3.select("body").append("svg")
+	this.baseSVG = d3.select("body").append("svg").attr("id","mysvg")
 		.attr({
 			width: $this.width + $this.margin.left + $this.margin.right,
 			height: $this.height + $this.margin.top + $this.margin.bottom,
 			marginleft: $this.margin.left,
 			margintop: $this.margin.top
 		})
+		.style("cursor", "default")
 		.on("mousedown", $this.mousedown)
 		.on("mousemove", $this.mousemove)
 		.on("mouseup", $this.mouseup);
@@ -120,13 +122,13 @@ Demo.prototype.init = function(){
 	svg = this.svg;
 
 	cursor = this.svg.append("circle")
-		.attr("r", 6)
+		//.attr("r", 6)
+		.attr("r", 0)
 		.attr("transform", "translate(-100,-100)")
 		.attr("class", "cursor")
 		.attr("fill","orange")
 		
 	this.createViz();
-	
 };
 
 Demo.prototype.mousedown = function() {
@@ -157,7 +159,7 @@ Demo.prototype.mousemove = function() {
 		
 		// move the curve and also update the skeleton curve with how the main curve changed
 		var changedPtsMap = curve.moveCurve(draggingInfo, delta, adjustWidth);
-		skelCurve.adjustPoints(changedPtsMap);
+		allCurves.forEach(function(d) { if(d!=curve) d.adjustPoints(changedPtsMap); });
 		
 		paths.attr("d", function(d) { return lineFunction(d.curve()); });
 	}
@@ -166,7 +168,7 @@ Demo.prototype.mousemove = function() {
 	var hitinfo = curve.getClosestPoint(pt);
 	var oncurve = hitinfo.pointOnCurve;
 	cursor.attr("transform", "translate(" + oncurve.x + "," + oncurve.y + ")");
-	
+
 	updateViz();
 }
 
@@ -176,11 +178,11 @@ Demo.prototype.mouseup = function() {
 
 Demo.prototype.keydown = function() {
 	if(d3.event.keyCode == 80) { // P
-		var s = "";
+		var s = "pts = [";
 		curve.points().forEach(function(d) {
-			s += "[x:" + Math.round(d.x) + ",y:" + Math.round(d.y) + "],";
+			s += "{x:" + Math.round(d.x) + ",y:" + Math.round(d.y) + "},";
 		});
-		console.log(s);
+		console.log(s.substring(0,s.length-1) + ']');
 	}
 }
 
@@ -198,7 +200,7 @@ function adjustPts(ptMap) {
 
 Demo.prototype.clickButton = function(setting, but){
 	if(setting.setting == "Type") {
-		var possible = ["bspline","interpolating","bezier"];
+		var possible = ["bspline","dyn-levin","catmull-rom"];
 		var i = possible.indexOf(setting.value);
 		if(i >= 0)
 			i = (i+1)%possible.length;
@@ -213,9 +215,18 @@ Demo.prototype.clickButton = function(setting, but){
 		setting.value = Math.max(2,(setting.value + 1)%7);
 		curve.degree(setting.value);
 	}
+	else if(setting.setting == "Catmull Tension") {
+		var possible = [0, 0.5, 1];
+		var i = possible.indexOf(setting.value);
+		if(i >= 0)
+			i = (i+1)%possible.length;
+		setting.value = possible[i]
+		curve.catmullTension(possible[i]);
+	}
 	else if(setting.setting == "Open") {
 		setting.value = !setting.value;
 		curve.open(setting.value);
+		skelCurve.open(setting.value);
 	}
 	else if(setting.setting == "Drag Width") {
 		setting.value = setting.value % 3 + 1;
@@ -259,10 +270,10 @@ Demo.prototype.createViz = function(){
 		.enter()
 		.append("path")
 		.attr("d", function(d) { return lineFunction(d.curve()); })
-		.attr("stroke", function(d) { return d.resolution() == 0 ? "red" : "#115577";})
-		.attr("stroke-width", function(d) { return d.resolution() == 0 ? 1 : 3;})
+		.attr("stroke", function(d) { return d.color;})
+		.attr("stroke-width", function(d) { return d.resolution() == 0 ? 1 : 5;})
 		.attr("fill", "none");
-	
+					
 	if(showPoints) {
 		ptCircles = this.svg.selectAll(".ptCircles")
 			.data(curve.curve())
